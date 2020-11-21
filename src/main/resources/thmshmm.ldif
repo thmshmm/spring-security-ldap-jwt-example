@@ -1,0 +1,50 @@
+dn: dc=thmshmm,dc=de
+objectclass: top
+objectclass: domain
+objectclass: extensibleObject
+dc: thmshmm
+o: ThmsHmm
+
+dn: ou=people,dc=thmshmm,dc=de
+objectclass: top
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=thmshmm,dc=de
+objectClass: top
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=user1,ou=people,dc=thmshmm,dc=de
+objectclass: top
+objectclass: person
+objectclass: organizationalPerson
+objectclass: inetOrgPerson
+cn: User One
+sn: One
+givenName: User
+mail: user.one@thmshmm.de
+uid: user1
+userPassword: user1
+
+dn: uid=admin,ou=people,dc=thmshmm,dc=de
+objectClass: inetOrgPerson
+cn: Admin One
+sn: One
+givenName: Admin
+mail: admin@thmshmm.de
+uid: admin
+userPassword: admin
+
+dn: cn=admins,ou=groups,dc=thmshmm,dc=de
+objectclass: top
+objectclass: groupOfUniqueNames
+cn: admins
+uniqueMember: uid=admin,ou=people,dc=thmshmm,dc=de
+
+dn: cn=users,ou=groups,dc=thmshmm,dc=de
+objectclass: top
+objectclass: groupOfUniqueNames
+cn: users
+uniqueMember: uid=user1,ou=people,dc=thmshmm,dc=de
+uniqueMember: uid=admin,ou=people,dc=thmshmm,dc=de
