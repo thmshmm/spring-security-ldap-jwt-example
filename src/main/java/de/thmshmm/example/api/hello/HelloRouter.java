@@ -1,6 +1,5 @@
 package de.thmshmm.example.api.hello;
 
-import de.thmshmm.example.api.hello.HelloHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;

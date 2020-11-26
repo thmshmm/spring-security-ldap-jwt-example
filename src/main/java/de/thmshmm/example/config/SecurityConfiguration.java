@@ -1,76 +1,71 @@
 package de.thmshmm.example.config;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.web.reactive.error.ErrorWebExceptionHandler;
 import org.springframework.context.annotation.Bean;
-import org.springframework.ldap.core.support.BaseLdapPathContextSource;
-import org.springframework.ldap.core.support.LdapContextSource;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.ProviderManager;
-import org.springframework.security.authentication.ReactiveAuthenticationManager;
-import org.springframework.security.authentication.ReactiveAuthenticationManagerAdapter;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
+import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
-import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
-import org.springframework.security.core.authority.mapping.SimpleAuthorityMapper;
-import org.springframework.security.ldap.authentication.BindAuthenticator;
-import org.springframework.security.ldap.authentication.LdapAuthenticationProvider;
-import org.springframework.security.ldap.search.FilterBasedLdapUserSearch;
-import org.springframework.security.ldap.userdetails.DefaultLdapAuthoritiesPopulator;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.authentication.AuthenticationWebFilter;
+import reactor.core.publisher.Mono;
 
-import java.util.Arrays;
-
-import static de.thmshmm.example.config.ApiProperties.API_PREFIX;
-import static de.thmshmm.example.config.ApiProperties.AUTH_API_PREFIX;
+import java.util.List;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 @EnableWebFluxSecurity
+@Slf4j
 public class SecurityConfiguration {
 
     @Bean
-    public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
-        return http.authorizeExchange()
-                .pathMatchers(AUTH_API_PREFIX + "/login").permitAll().and()
+    public SecurityWebFilterChain springSecurityFilterChain(
+            ServerHttpSecurity http,
+            @Qualifier(value = "jwtAuthenticationWebFilter") AuthenticationWebFilter jwtAuthFilter,
+            @Qualifier(value = "ldapAuthenticationWebFilter") AuthenticationWebFilter ldapAuthFilter
+    ) {
+        return http
+                .formLogin().disable()
                 .httpBasic().disable()
+                .logout().disable()
                 .authorizeExchange()
-                .pathMatchers(API_PREFIX + "/hello").hasAnyRole("USERS", "ADMINS")
-                .pathMatchers(API_PREFIX + "/hello-admin").hasRole("ADMINS")
-                .anyExchange().authenticated().and()
-                .httpBasic().and()
+                .pathMatchers("/auth/login")
+                .permitAll()
+                .and()
+                .authorizeExchange().pathMatchers("/api/hello")
+                .access((authentication, object) -> authentication.map(
+                        auth -> authorizationDecision(auth, s -> s.equals("ROLE_USERS")))
+                ).and()
+                .authorizeExchange().pathMatchers("/api/hello-admin")
+                .access((authentication, object) -> authentication.map(
+                        auth -> authorizationDecision(auth, s -> s.equals("ROLE_ADMINS")))
+                ).and()
+                .authorizeExchange().anyExchange().authenticated().and()
+                .addFilterAt(ldapAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+                .addFilterAt(jwtAuthFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }
 
     @Bean
-    BaseLdapPathContextSource contextSource() {
-        LdapContextSource context = new LdapContextSource();
-        context.setUrl("ldap://localhost:8389");
-        context.setBase("dc=thmshmm,dc=de");
-        context.afterPropertiesSet();
-        return context;
+    public ErrorWebExceptionHandler webExceptionHandler() {
+        return (exchange, ex) -> {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return Mono.empty();
+        };
     }
 
-    @Bean
-    ReactiveAuthenticationManager authenticationManager(BaseLdapPathContextSource contextSource, DefaultLdapAuthoritiesPopulator authoritiesPopulator, GrantedAuthoritiesMapper authoritiesMapper) {
-        BindAuthenticator authenticator = new BindAuthenticator(contextSource);
-        authenticator.setUserSearch(new FilterBasedLdapUserSearch("ou=people", "(uid={0})", contextSource));
-        authenticator.afterPropertiesSet();
-
-        LdapAuthenticationProvider provider = new LdapAuthenticationProvider(authenticator, authoritiesPopulator);
-        provider.setAuthoritiesMapper(authoritiesMapper);
-        AuthenticationManager manager = new ProviderManager(Arrays.asList(provider));
-
-        return new ReactiveAuthenticationManagerAdapter(manager);
-    }
-
-    @Bean
-    DefaultLdapAuthoritiesPopulator authoritiesPopulator(BaseLdapPathContextSource contextSource) {
-        DefaultLdapAuthoritiesPopulator authoritiesPopulator = new DefaultLdapAuthoritiesPopulator(contextSource, "ou=groups");
-        authoritiesPopulator.setGroupSearchFilter("(uniqueMember={0})");
-        return authoritiesPopulator;
-    }
-
-    @Bean
-    GrantedAuthoritiesMapper authoritiesMapper() {
-        SimpleAuthorityMapper authorityMapper = new SimpleAuthorityMapper();
-        authorityMapper.setConvertToUpperCase(true);
-        return authorityMapper;
+    private AuthorizationDecision authorizationDecision(Authentication auth, Predicate<? super String> filter) {
+        List<String> roleUsers = auth.getAuthorities().stream()
+                .map(o -> o.getAuthority())
+                .filter(filter)
+                .collect(Collectors.toList());
+        if (roleUsers.size() > 0) {
+            return new AuthorizationDecision(true);
+        }
+        return new AuthorizationDecision(false);
     }
 }
